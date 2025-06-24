@@ -33,7 +33,7 @@ a. Clone the Repository:
 
 Bash
 
-git clone <[your-repository-url](https://github.com/a7midi/emergent_universe_visualizer)>
+git clone <https://github.com/a7midi/emergent_universe_visualizer>
 cd emergent_universe_visualizer
 b. Create the Virtual Environment:
 Open your terminal in the project's root directory and run:
