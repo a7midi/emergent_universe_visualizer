@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Emergent‑Universe Viewer</title>
+  <style>
+    body{margin:0;overflow:hidden;background:#000;color:#0ff;font-family:Inter,Arial,Helvetica,sans-serif}
+    #info{position:fixed;top:8px;left:8px;background:#000a;padding:12px 16px;border-radius:6px;line-height:1.4}
+    #timeline{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);width:50%;height:38px;}
+    input[type="range"]{width:100%}
+  </style>
+</head>
+<body>
+<div id="info">
+  <h2 style="margin:0;color:#00e7ff">Emergent Universe</h2>
+  <h3 style="margin:.4em 0 1em;color:#00bfff">Universe State</h3>
+  <div id="stats">Loading …</div>
+</div>
+<div id="timeline">
+  <input id="seek" type="range" min="0" max="0" value="0">
+</div>
+
+<script type="module">
+import * as THREE       from 'https://cdn.jsdelivr.net/npm/three@0.163/build/three.module.js';
+import {OrbitControls}  from 'https://cdn.jsdelivr.net/npm/three@0.163/examples/jsm/controls/OrbitControls.js';
+import {GLTFLoader}     from 'https://cdn.jsdelivr.net/npm/three@0.163/examples/jsm/loaders/GLTFLoader.js';
+import {EffectComposer} from 'https://cdn.jsdelivr.net/npm/three@0.163/examples/jsm/postprocessing/EffectComposer.js';
+import {RenderPass}     from 'https://cdn.jsdelivr.net/npm/three@0.163/examples/jsm/postprocessing/RenderPass.js';
+import {UnrealBloomPass}from 'https://cdn.jsdelivr.net/npm/three@0.163/examples/jsm/postprocessing/UnrealBloomPass.js';
+
+const canvasW = window.innerWidth,
+      canvasH = window.innerHeight;
+
+// -----------------------------------------------------------------------------
+//  Global THREE scene & post‑FX
+// -----------------------------------------------------------------------------
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(canvasW, canvasH);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, canvasW/canvasH, 0.1, 5000);
+camera.position.set(0, -400, 1200);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(canvasW,canvasH), 0.8, 0.4, 0.85);
+composer.addPass(bloom);
+
+// -----------------------------------------------------------------------------
+//  Load substrate.glb  (nodes + edges)
+// -----------------------------------------------------------------------------
+const glb = await new GLTFLoader().loadAsync('results/substrate.glb');
+scene.add(glb.scene);
+
+// Centre camera on the GLB bounding‑box
+{
+  const bbox = new THREE.Box3().setFromObject(glb.scene);
+  const centre = new THREE.Vector3();
+  bbox.getCenter(centre);
+  controls.target.copy(centre);
+  camera.position.add(centre);
+}
+
+// -----------------------------------------------------------------------------
+//  Particle system – InstancedMesh of glowing sprites
+// -----------------------------------------------------------------------------
+const PARTICLE_COUNT = 12000;             // upper bound
+const geom  = new THREE.SphereGeometry(3, 8, 8);
+const mat   = new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0.9});
+const particles = new THREE.InstancedMesh(geom, mat, PARTICLE_COUNT);
+particles.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(particles);
+
+// -----------------------------------------------------------------------------
+//  Stream simulation_log.jsonl   (newline‑delimited JSON)
+// -----------------------------------------------------------------------------
+const resp  = await fetch('results/simulation_log.jsonl');
+const text  = await resp.text();
+const frames = text.trim().split('\n').map(JSON.parse);
+document.getElementById('seek').max = frames.length-1;
+
+function updateStats(f){ document.getElementById('stats').innerHTML =
+   `Active Particles ${f.particles.length}<br>Current Tick ${f.tick}`; }
+
+// -----------------------------------------------------------------------------
+//  Draw helpers
+// -----------------------------------------------------------------------------
+function drawFrame(f){
+  updateStats(f);
+  for(let i=0;i<PARTICLE_COUNT;i++){
+    const m = new THREE.Matrix4();
+    if(i < f.particles.length){
+      const p = f.particles[i];
+      m.makeScale(p.kinematics.radius, p.kinematics.radius, p.kinematics.radius);
+      m.setPosition(...p.kinematics.centroid);
+    }
+    particles.setMatrixAt(i,m);
+  }
+  particles.instanceMatrix.needsUpdate = true;
+}
+
+// -----------------------------------------------------------------------------
+//  Timeline
+// -----------------------------------------------------------------------------
+let play = true, frameIdx = 0, lastT = performance.now();
+const seek = document.getElementById('seek');
+seek.oninput = e => { frameIdx = +seek.value; drawFrame(frames[frameIdx]); };
+
+window.addEventListener('keydown', e=>{
+  if(e.code==='Space'){ play=!play; }
+});
+
+function animate(now){
+  requestAnimationFrame(animate);
+  controls.update();
+
+  if(play && now-lastT>60){
+    frameIdx = (frameIdx+1)%frames.length;
+    seek.value = frameIdx;
+    drawFrame(frames[frameIdx]);
+    lastT = now;
+  }
+  composer.render();
+}
+drawFrame(frames[0]);
+animate(performance.now());
+</script>
+</body>
+</html>
