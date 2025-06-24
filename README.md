@@ -132,3 +132,23 @@ visualization:
   enabled: false
   update_interval: 200
   save_frames: false
+
+  3D INTERACTIVE VISUALIZER UPDATE:
+
+Instructions for Use
+Save the Code: Save the following code block as a new file named visualizer.html.
+
+Place Your Data: Make sure the visualizer.html file is in the same parent directory as your results folder. The final file structure should look like this:
+
+/your_project_folder/
+|-- visualizer.html
+|-- /results/
+    |-- static_universe.json
+    |-- simulation_log.jsonl
+Run a Local Server: Because the visualizer loads external data files (.json, .jsonl), you cannot simply open the HTML file directly in your browser due to security restrictions (CORS policy). You must serve it from a local web server.
+
+If you have Python installed, the easiest way is to open a terminal in your project folder and run:
+Python 3: python -m http.server
+Python 2: python -m SimpleHTTPServer
+Then, open your web browser and navigate to http://localhost:8000/visualizer.html.
+This visualizer is designed to be both a powerful analytical tool for your own research and a compelling demonstration of your theory for others.
