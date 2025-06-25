@@ -11,7 +11,7 @@ causal_site:
   layers: 60
   avg_nodes_per_layer: 35
   edge_probability: 0.08
-  max_lookback_layers: 0
+  max_lookback_layers: 1
 
 # State & Tag Parameters
 tags:
