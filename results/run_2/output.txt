@@ -1,0 +1,99 @@
+Configuration loaded successfully from config.yaml.
+--- Emergent Universe Simulation (Cinematic Data Export) ---
+1. Initializing Universe Components...
+Generating causal site graph...
+Using max predecessor lookback of 1 layers.
+Enforcing maximum successor count (R) of 2...
+Safeguarding against isolated visible nodes...
+Graph generation complete. Total nodes: 2179
+Assigning nodes to grid cells for particle detection...
+Grid cell assignment complete.
+2. Calculating 3D layout and exporting static data...
+Static data saved to results/static_universe.json
+
+3. Starting Simulation Loop for Dynamic Data Export...
+Tick 100: 12 active particles.
+Tick 200: 5 active particles.
+Tick 300: 10 active particles.
+Tick 400: 9 active particles.
+Tick 500: 10 active particles.
+Tick 600: 12 active particles.
+Tick 700: 9 active particles.
+Tick 800: 16 active particles.
+Tick 900: 6 active particles.
+Tick 1000: 11 active particles.
+Tick 1100: 8 active particles.
+Tick 1200: 7 active particles.
+Tick 1300: 13 active particles.
+Tick 1400: 12 active particles.
+Tick 1500: 5 active particles.
+Tick 1600: 10 active particles.
+Tick 1700: 17 active particles.
+Tick 1800: 6 active particles.
+Tick 1900: 5 active particles.
+Tick 2000: 6 active particles.
+Tick 2100: 10 active particles.
+Tick 2200: 9 active particles.
+Tick 2300: 8 active particles.
+Tick 2400: 11 active particles.
+Tick 2500: 8 active particles.
+Tick 2600: 8 active particles.
+Tick 2700: 14 active particles.
+Tick 2800: 8 active particles.
+Tick 2900: 10 active particles.
+Tick 3000: 14 active particles.
+Tick 3100: 10 active particles.
+Tick 3200: 7 active particles.
+Tick 3300: 8 active particles.
+Tick 3400: 9 active particles.
+Tick 3500: 8 active particles.
+Tick 3600: 9 active particles.
+Tick 3700: 9 active particles.
+Tick 3800: 9 active particles.
+Tick 3900: 13 active particles.
+Tick 4000: 5 active particles.
+Tick 4100: 9 active particles.
+Tick 4200: 11 active particles.
+Tick 4300: 12 active particles.
+Tick 4400: 11 active particles.
+Tick 4500: 10 active particles.
+Tick 4600: 10 active particles.
+Tick 4700: 8 active particles.
+Tick 4800: 13 active particles.
+Tick 4900: 6 active particles.
+Tick 5000: 9 active particles.
+Tick 5100: 13 active particles.
+Tick 5200: 8 active particles.
+Tick 5300: 9 active particles.
+Tick 5400: 8 active particles.
+Tick 5500: 10 active particles.
+Tick 5600: 7 active particles.
+Tick 5700: 7 active particles.
+Tick 5800: 6 active particles.
+Tick 5900: 16 active particles.
+Tick 6000: 7 active particles.
+Tick 6100: 11 active particles.
+Tick 6200: 8 active particles.
+Tick 6300: 13 active particles.
+Tick 6400: 13 active particles.
+Tick 6500: 6 active particles.
+Tick 6600: 7 active particles.
+Tick 6700: 9 active particles.
+Tick 6800: 10 active particles.
+Tick 6900: 10 active particles.
+Tick 7000: 6 active particles.
+Tick 7100: 12 active particles.
+Tick 7200: 9 active particles.
+Tick 7300: 8 active particles.
+Tick 7400: 10 active particles.
+Tick 7500: 6 active particles.
+Tick 7600: 7 active particles.
+Tick 7700: 3 active particles.
+Tick 7800: 7 active particles.
+Tick 7900: 8 active particles.
+Simulating: 100%|████████████████████████████████████████████████████████████████| 8000/8000 [1:52:55<00:00,  1.18it/s]
+
+Simulation Loop Complete.
+Cinematic simulation history saved to results/simulation_log.jsonl
+
+--- Data Export Finished ---
