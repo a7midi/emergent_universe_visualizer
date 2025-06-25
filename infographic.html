@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Particle Data Infographic</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .chart-container {
+            background-color: #1f2937; /* bg-gray-800 */
+            border-radius: 0.75rem; /* rounded-xl */
+            padding: 1.5rem; /* p-6 */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            transition: all 0.3s ease-in-out;
+        }
+        .chart-container:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        .chart-title {
+            color: #d1d5db; /* text-gray-300 */
+            font-size: 1.125rem; /* text-lg */
+            font-weight: 600; /* font-semibold */
+            margin-bottom: 1rem;
+        }
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            padding: 8px;
+            font-size: 12px;
+            background: #f9fafb; /* bg-gray-50 */
+            color: #111827; /* text-gray-900 */
+            border: 1px solid #d1d5db; /* border-gray-300 */
+            border-radius: 8px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .axis path,
+        .axis line {
+            stroke: #4b5563; /* gray-600 */
+        }
+        .axis text {
+            fill: #9ca3af; /* gray-400 */
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white p-4 sm:p-6 md:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <header class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-indigo-600">Emergent Universe Simulation Dashboard</h1>
+            <p class="mt-2 text-lg text-gray-400">Upload your `simulation_log.jsonl` to generate an interactive infographic.</p>
+        </header>
+
+        <!-- File Upload -->
+        <div class="mb-8 p-6 bg-gray-800 rounded-xl shadow-lg flex flex-col items-center justify-center border-2 border-dashed border-gray-600 hover:border-indigo-500 transition-colors">
+            <label for="file-upload" class="cursor-pointer text-center">
+                <svg class="mx-auto h-12 w-12 text-gray-500" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4V12a4 4 0 014-4h12l4 4h12a4 4 0 014 4z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span class="mt-2 block text-sm font-medium text-gray-300">
+                    Click to upload a JSONL file
+                </span>
+                 <p class="text-xs text-gray-500">Expected file: `simulation_log.jsonl`</p>
+            </label>
+            <input id="file-upload" name="file-upload" type="file" class="sr-only" accept=".jsonl">
+            <p id="file-name" class="mt-2 text-sm text-gray-400"></p>
+        </div>
+        
+        <!-- Info Message -->
+        <div id="info-message" class="text-center p-8 text-gray-500">
+            <p>Your infographic will appear here once data is loaded.</p>
+            <button id="load-sample-data" class="mt-4 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-colors">Load Sample Data</button>
+        </div>
+
+
+        <!-- Charts Grid -->
+        <div id="charts-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 hidden">
+            <!-- Particle Period Breakdown -->
+            <div class="chart-container md:col-span-1 lg:row-span-2">
+                <h2 class="chart-title">Particle Period Breakdown</h2>
+                <div id="donut-chart" class="w-full h-96 flex items-center justify-center"></div>
+            </div>
+            <!-- Average Lifespan -->
+            <div class="chart-container md:col-span-1">
+                <h2 class="chart-title">Average Lifetime by Period</h2>
+                <div id="bar-chart" class="w-full h-64"></div>
+            </div>
+            <!-- Radius vs Lifetime -->
+            <div class="chart-container md:col-span-2 lg:col-span-1">
+                <h2 class="chart-title">Radius vs. Lifetime</h2>
+                <div id="scatter-plot" class="w-full h-64"></div>
+            </div>
+            <!-- Lifetime Distribution -->
+            <div class="chart-container md:col-span-2">
+                <h2 class="chart-title">Particle Lifetime Distribution</h2>
+                <div id="histogram-chart" class="w-full h-64"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Tooltip Element -->
+    <div id="tooltip" class="tooltip"></div>
+
+    <script>
+        const fileUpload = document.getElementById('file-upload');
+        const fileNameDisplay = document.getElementById('file-name');
+        const chartsGrid = document.getElementById('charts-grid');
+        const infoMessage = document.getElementById('info-message');
+        const loadSampleBtn = document.getElementById('load-sample-data');
+
+        const tooltip = d3.select("#tooltip");
+
+        fileUpload.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                fileNameDisplay.textContent = file.name;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const data = parseJsonl(e.target.result);
+                    processData(data);
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        loadSampleBtn.addEventListener('click', () => {
+            const sampleJSONL = `
+{"tick": 0, "events": {"spawned": ["p1", "p2"], "decayed": []}, "particles": [{"id": "p1", "period": 5, "lifetime": 10, "num_cells": 3, "kinematics": {"centroid": [1,2,3], "radius": 15.2}}, {"id": "p2", "period": 8, "lifetime": 25, "num_cells": 5, "kinematics": {"centroid": [4,5,6], "radius": 22.8}}]}
+{"tick": 1, "events": {"spawned": ["p3"], "decayed": ["p1"]}, "particles": [{"id": "p2", "period": 8, "lifetime": 26, "num_cells": 5, "kinematics": {"centroid": [4.1,5.1,6.1], "radius": 22.9}}, {"id": "p3", "period": 5, "lifetime": 1, "num_cells": 2, "kinematics": {"centroid": [7,8,9], "radius": 12.1}}]}
+{"tick": 2, "events": {"spawned": [], "decayed": []}, "particles": [{"id": "p2", "period": 8, "lifetime": 27, "num_cells": 5, "kinematics": {"centroid": [4.2,5.2,6.2], "radius": 23.0}}, {"id": "p3", "period": 5, "lifetime": 2, "num_cells": 2, "kinematics": {"centroid": [7.1,8.1,9.1], "radius": 12.2}}]}
+{"tick": 3, "events": {"spawned": ["p4"], "decayed": ["p2"]}, "particles": [{"id": "p3", "period": 5, "lifetime": 3, "num_cells": 2, "kinematics": {"centroid": [7.2,8.2,9.2], "radius": 12.3}}, {"id": "p4", "period": 12, "lifetime": 1, "num_cells": 8, "kinematics": {"centroid": [10,11,12], "radius": 35.0}}]}`;
+            const data = parseJsonl(sampleJSONL);
+            processData(data);
+            if(fileNameDisplay) fileNameDisplay.textContent = "sample_data.jsonl";
+        });
+
+        function parseJsonl(text) {
+            // This function parses a JSONL string and aggregates all particles from all ticks.
+            const lines = text.trim().split('\n');
+            let allParticles = [];
+            lines.forEach(line => {
+                if (line.trim()) {
+                    try {
+                        const frame = JSON.parse(line);
+                        if (frame.particles && Array.isArray(frame.particles)) {
+                            allParticles = allParticles.concat(frame.particles);
+                        }
+                    } catch (e) {
+                        console.error("Failed to parse JSON line:", line, e);
+                    }
+                }
+            });
+            return allParticles;
+        }
+
+        function processData(data) {
+            if (!data || data.length === 0) {
+                console.error("Data is empty or invalid. No particles found.");
+                chartsGrid.classList.add('hidden');
+                infoMessage.classList.remove('hidden');
+                infoMessage.querySelector('p').textContent = 'Could not find any particle data in the file.';
+                return;
+            }
+            chartsGrid.classList.remove('hidden');
+            infoMessage.classList.add('hidden');
+            
+            // Clear previous charts
+            d3.select("#donut-chart").selectAll("*").remove();
+            d3.select("#bar-chart").selectAll("*").remove();
+            d3.select("#scatter-plot").selectAll("*").remove();
+            d3.select("#histogram-chart").selectAll("*").remove();
+
+            drawDonutChart(data);
+            drawBarChart(data);
+            drawScatterPlot(data);
+            drawHistogram(data);
+        }
+
+        // --- D3.js Chart Drawing Functions ---
+
+        function drawDonutChart(data) {
+            const counts = d3.rollup(data, v => v.length, d => d.period);
+            const pieData = Array.from(counts, ([key, value]) => ({ type: key, value: value }));
+
+            const container = d3.select("#donut-chart");
+            const width = container.node().getBoundingClientRect().width;
+            const height = container.node().getBoundingClientRect().height;
+            const radius = Math.min(width, height) / 2.5;
+
+            const svg = container.append("svg")
+                .attr("width", width)
+                .attr("height", height)
+                .append("g")
+                .attr("transform", `translate(${width / 2}, ${height / 2})`);
+
+            const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+            const pie = d3.pie().value(d => d.value).sort(null);
+            const arc = d3.arc().innerRadius(radius * 0.5).outerRadius(radius);
+
+            svg.selectAll("path")
+                .data(pie(pieData))
+                .join("path")
+                .attr("d", arc)
+                .attr("fill", d => color(d.data.type))
+                .attr("stroke", "#1f2937")
+                .style("stroke-width", "2px")
+                .style("cursor", "pointer")
+                .on("mouseover", function(event, d) {
+                    d3.select(this).transition().duration(200).attr('transform', 'scale(1.05)');
+                    tooltip.transition().duration(200).style("opacity", .9);
+                    tooltip.html(`<b>Period ${d.data.type}</b><br/>Observations: ${d.data.value}`)
+                        .style("left", (event.pageX + 15) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function() {
+                    d3.select(this).transition().duration(200).attr('transform', 'scale(1)');
+                    tooltip.transition().duration(500).style("opacity", 0);
+                });
+        }
+        
+        function drawBarChart(data) {
+            const avgLifetime = d3.rollups(data, v => d3.mean(v, d => d.lifetime), d => d.period);
+            const chartData = Array.from(avgLifetime, ([key, value]) => ({ type: key, value: value })).sort((a,b) => b.value - a.value);
+
+            const container = d3.select("#bar-chart");
+            const margin = {top: 20, right: 30, bottom: 40, left: 60};
+            const width = container.node().getBoundingClientRect().width - margin.left - margin.right;
+            const height = container.node().getBoundingClientRect().height - margin.top - margin.bottom;
+
+            const svg = container.append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleLinear()
+                .domain([0, d3.max(chartData, d => d.value)]).nice()
+                .range([0, width]);
+                
+            const y = d3.scaleBand()
+                .domain(chartData.map(d => `Period ${d.type}`))
+                .range([0, height])
+                .padding(0.1);
+
+            svg.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).ticks(5))
+                .selectAll("text")
+                .style("font-size", "10px");
+
+            svg.append("g").call(d3.axisLeft(y));
+
+            const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+            svg.selectAll("rect")
+                .data(chartData)
+                .join("rect")
+                .attr("x", x(0))
+                .attr("y", d => y(`Period ${d.type}`))
+                .attr("width", 0)
+                .attr("height", y.bandwidth())
+                .attr("fill", d => color(d.type))
+                .on("mouseover", (event, d) => {
+                    tooltip.transition().duration(200).style("opacity", .9);
+                    tooltip.html(`<b>Period ${d.type}</b><br/>Avg Lifetime: ${d.value.toFixed(2)}`)
+                        .style("left", (event.pageX + 5) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", () => tooltip.transition().duration(500).style("opacity", 0))
+                .transition().duration(1000).delay((d,i) => i * 100)
+                .attr("width", d => x(d.value));
+        }
+
+        function drawScatterPlot(data) {
+            const validData = data.filter(d => d.lifetime > 0 && d.kinematics && d.kinematics.radius > 0);
+            
+            const container = d3.select("#scatter-plot");
+            const margin = {top: 20, right: 30, bottom: 40, left: 60};
+            const width = container.node().getBoundingClientRect().width - margin.left - margin.right;
+            const height = container.node().getBoundingClientRect().height - margin.top - margin.bottom;
+
+            const svg = container.append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleLog()
+                .domain(d3.extent(validData, d => d.lifetime)).nice()
+                .range([0, width]);
+
+            const y = d3.scaleLinear()
+                .domain(d3.extent(validData, d => d.kinematics.radius)).nice()
+                .range([height, 0]);
+
+            svg.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).ticks(5, d3.format(".1s")));
+
+            svg.append("g").call(d3.axisLeft(y));
+            
+            const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+            svg.selectAll("circle")
+                .data(validData)
+                .join("circle")
+                .attr("cx", d => x(d.lifetime))
+                .attr("cy", d => y(d.kinematics.radius))
+                .attr("r", 0)
+                .style("fill", d => color(d.period))
+                .style("opacity", 0.7)
+                .on("mouseover", (event, d) => {
+                    tooltip.transition().duration(200).style("opacity", .9);
+                    tooltip.html(`<b>Period ${d.period}</b><br/>Lifetime: ${d.lifetime.toFixed(2)}<br/>Radius: ${d.kinematics.radius.toFixed(2)}`)
+                        .style("left", (event.pageX + 5) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", () => tooltip.transition().duration(500).style("opacity", 0))
+                .transition().duration(500).delay((d,i) => i * 2)
+                .attr("r", 5);
+        }
+
+        function drawHistogram(data) {
+            const validData = data.filter(d => d.lifetime > 0);
+            
+            const container = d3.select("#histogram-chart");
+            const margin = {top: 20, right: 30, bottom: 40, left: 60};
+            const width = container.node().getBoundingClientRect().width - margin.left - margin.right;
+            const height = container.node().getBoundingClientRect().height - margin.top - margin.bottom;
+
+            const svg = container.append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+            
+            const x = d3.scaleLinear()
+                .domain(d3.extent(validData, d => d.lifetime)).nice()
+                .range([0, width]);
+            
+            svg.append("g")
+                .attr("transform", `translate(0, ${height})`)
+                .call(d3.axisBottom(x).ticks(10));
+                
+            const histogram = d3.histogram()
+                .value(d => d.lifetime)
+                .domain(x.domain())
+                .thresholds(x.ticks(20));
+
+            const bins = histogram(validData);
+
+            const y = d3.scaleLinear()
+                .range([height, 0]);
+            y.domain([0, d3.max(bins, d => d.length)]).nice();
+            svg.append("g").call(d3.axisLeft(y));
+
+            svg.selectAll("rect")
+                .data(bins)
+                .join("rect")
+                    .attr("x", 1)
+                    .attr("transform", d => `translate(${x(d.x0)}, ${y(d.length)})`)
+                    .attr("width", d => Math.max(0, x(d.x1) - x(d.x0) - 1))
+                    .attr("height", 0)
+                    .style("fill", "#6366f1") // indigo-500
+                    .on("mouseover", (event, d) => {
+                        tooltip.transition().duration(200).style("opacity", .9);
+                        tooltip.html(`Range: ${d.x0.toFixed(1)} - ${d.x1.toFixed(1)}<br/>Count: ${d.length}`)
+                            .style("left", (event.pageX + 5) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mouseout", () => tooltip.transition().duration(500).style("opacity", 0))
+                    .transition().duration(750)
+                    .attr("height", d => height - y(d.length))
+                    .attr("y", 0);
+        }
+
+    </script>
+</body>
+</html>
+
