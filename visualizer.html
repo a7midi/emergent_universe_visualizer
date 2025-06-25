@@ -1,135 +1,222 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Emergent‑Universe Viewer</title>
+<!-- Save as visualizer.html next to /results/  -->
+<!DOCTYPE html><html lang="en"><head>
+  <meta charset="utf-8">
+  <title>Emergent Universe — Dynamic Viewer</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script type="importmap">
+  { "imports": { "three":
+    "https://cdn.jsdelivr.net/npm/three@0.163/build/three.module.js" } }
+  </script>
   <style>
-    body{margin:0;overflow:hidden;background:#000;color:#0ff;font-family:Inter,Arial,Helvetica,sans-serif}
-    #info{position:fixed;top:8px;left:8px;background:#000a;padding:12px 16px;border-radius:6px;line-height:1.4}
-    #timeline{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);width:50%;height:38px;}
-    input[type="range"]{width:100%}
+   html,body{margin:0;height:100%;overflow:hidden;background:#000}
+   canvas{display:block}
+   #tip{position:fixed;pointer-events:none;background:#00384ee6;color:#caffff;
+        font:13px monospace;padding:6px 10px;border-radius:4px;
+        transform:translate(-50%,-120%);white-space:nowrap}
+   #tip.hide{display:none}
+   #hud{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
+        width:min(65%,900px);display:flex;align-items:center;gap:12px}
+   #hud input{flex:1} #play{cursor:pointer;background:#0af;border:none;
+        color:#fff;padding:6px 14px;font:14px/1 Inter;border-radius:3px}
+   #tickLabel{color:#0af;font:13px monospace}
   </style>
-</head>
-<body>
-<div id="info">
-  <h2 style="margin:0;color:#00e7ff">Emergent Universe</h2>
-  <h3 style="margin:.4em 0 1em;color:#00bfff">Universe State</h3>
-  <div id="stats">Loading …</div>
-</div>
-<div id="timeline">
-  <input id="seek" type="range" min="0" max="0" value="0">
-</div>
-
-<script type="module">
-import * as THREE       from 'https://cdn.jsdelivr.net/npm/three@0.163/build/three.module.js';
-import {OrbitControls}  from 'https://cdn.jsdelivr.net/npm/three@0.163/examples/jsm/controls/OrbitControls.js';
-import {GLTFLoader}     from 'https://cdn.jsdelivr.net/npm/three@0.163/examples/jsm/loaders/GLTFLoader.js';
-import {EffectComposer} from 'https://cdn.jsdelivr.net/npm/three@0.163/examples/jsm/postprocessing/EffectComposer.js';
-import {RenderPass}     from 'https://cdn.jsdelivr.net/npm/three@0.163/examples/jsm/postprocessing/RenderPass.js';
-import {UnrealBloomPass}from 'https://cdn.jsdelivr.net/npm/three@0.163/examples/jsm/postprocessing/UnrealBloomPass.js';
-
-const canvasW = window.innerWidth,
-      canvasH = window.innerHeight;
-
-// -----------------------------------------------------------------------------
-//  Global THREE scene & post‑FX
-// -----------------------------------------------------------------------------
-const renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setPixelRatio(window.devicePixelRatio);
-renderer.setSize(canvasW, canvasH);
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-document.body.appendChild(renderer.domElement);
-
-const scene  = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(45, canvasW/canvasH, 0.1, 5000);
-camera.position.set(0, -400, 1200);
-
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(canvasW,canvasH), 0.8, 0.4, 0.85);
-composer.addPass(bloom);
-
-// -----------------------------------------------------------------------------
-//  Load substrate.glb  (nodes + edges)
-// -----------------------------------------------------------------------------
-const glb = await new GLTFLoader().loadAsync('results/substrate.glb');
-scene.add(glb.scene);
-
-// Centre camera on the GLB bounding‑box
-{
-  const bbox = new THREE.Box3().setFromObject(glb.scene);
-  const centre = new THREE.Vector3();
-  bbox.getCenter(centre);
-  controls.target.copy(centre);
-  camera.position.add(centre);
-}
-
-// -----------------------------------------------------------------------------
-//  Particle system – InstancedMesh of glowing sprites
-// -----------------------------------------------------------------------------
-const PARTICLE_COUNT = 12000;             // upper bound
-const geom  = new THREE.SphereGeometry(3, 8, 8);
-const mat   = new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0.9});
-const particles = new THREE.InstancedMesh(geom, mat, PARTICLE_COUNT);
-particles.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-scene.add(particles);
-
-// -----------------------------------------------------------------------------
-//  Stream simulation_log.jsonl   (newline‑delimited JSON)
-// -----------------------------------------------------------------------------
-const resp  = await fetch('results/simulation_log.jsonl');
-const text  = await resp.text();
-const frames = text.trim().split('\n').map(JSON.parse);
-document.getElementById('seek').max = frames.length-1;
-
-function updateStats(f){ document.getElementById('stats').innerHTML =
-   `Active Particles ${f.particles.length}<br>Current Tick ${f.tick}`; }
-
-// -----------------------------------------------------------------------------
-//  Draw helpers
-// -----------------------------------------------------------------------------
-function drawFrame(f){
-  updateStats(f);
-  for(let i=0;i<PARTICLE_COUNT;i++){
-    const m = new THREE.Matrix4();
-    if(i < f.particles.length){
-      const p = f.particles[i];
-      m.makeScale(p.kinematics.radius, p.kinematics.radius, p.kinematics.radius);
-      m.setPosition(...p.kinematics.centroid);
+  </head><body>
+  <div id="tip"  class="hide"></div>
+  <div id="hud">
+    <button id="play">▶︎</button>
+    <input id="seek" type="range" min="0" max="0" value="0">
+    <span  id="tickLabel"></span>
+  </div>
+  
+  <script type="module">
+  import * as THREE          from 'three';
+  import {OrbitControls}     from 'https://cdn.jsdelivr.net/npm/three@0.163/examples/jsm/controls/OrbitControls.js';
+  import {EffectComposer}    from 'https://cdn.jsdelivr.net/npm/three@0.163/examples/jsm/postprocessing/EffectComposer.js';
+  import {RenderPass}        from 'https://cdn.jsdelivr.net/npm/three@0.163/examples/jsm/postprocessing/RenderPass.js';
+  import {UnrealBloomPass}   from 'https://cdn.jsdelivr.net/npm/three@0.163/examples/jsm/postprocessing/UnrealBloomPass.js';
+  import GUI                 from 'https://cdn.jsdelivr.net/npm/lil-gui@0.18/dist/lil-gui.esm.min.js';
+  
+  /* ---------- static paths ---------------- */
+  const STATIC='./results/static_universe.json';
+  const LOG   ='./results/simulation_log.jsonl';
+  
+  /* ---------- renderer / scene / camera ---- */
+  const renderer   = new THREE.WebGLRenderer({antialias:true});
+  renderer.setPixelRatio(devicePixelRatio);
+  renderer.setSize(innerWidth,innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  document.body.appendChild(renderer.domElement);
+  
+  const scene      = new THREE.Scene();
+  const camera     = new THREE.PerspectiveCamera(55,innerWidth/innerHeight,.1,5e5);
+  const controls   = new OrbitControls(camera,renderer.domElement); controls.enableDamping=true;
+  scene.add(new THREE.AmbientLight(0x24323e,.9));
+  
+  /* ---------- post FX --------------------- */
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene,camera));
+  const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),
+                                    0.8,        // strength
+                                    0.2,        // radius  (smaller → softer halo)
+                                    0.25);      // threshold (lower → more pixels bloom)
+  composer.addPass(bloom);
+  
+  /* ---------- load substrate -------------- */
+  const {nodes,edges} = await fetch(STATIC).then(r=>r.json());
+  for(const d of Object.values(nodes)) if(d.layer===undefined) d.layer=Math.round(d.position[2]||0);
+  
+  const raw = new Float32Array(Object.values(nodes).length*3);
+  let k=0; for(const d of Object.values(nodes)) raw.set(d.position,k),k+=3;
+  const box = new THREE.Box3().setFromArray(raw), diag=box.getSize(new THREE.Vector3()).length();
+  const SCALE = Math.min(innerWidth,innerHeight)/(renderer.getPixelRatio()*1.4)/diag;
+  Object.values(nodes).forEach(d=>d.position=d.position.map(v=>v*SCALE));
+  
+  /* ---------- node mesh ------------------- */
+  const nRad = diag*SCALE*0.005;
+  const nGeo = new THREE.SphereGeometry(nRad,8,8);
+  const nMat = new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:1});
+  const nMesh= new THREE.InstancedMesh(nGeo,nMat,Object.keys(nodes).length);
+  const depthMax = Math.max(...Object.values(nodes).map(n=>n.layer));
+  const hue0 = Math.random(), col = new THREE.Color(); k=0;
+  for(const d of Object.values(nodes)){
+    nMesh.setMatrixAt(k,new THREE.Matrix4().setPosition(...d.position));
+    col.setHSL((hue0+d.layer/depthMax)%1,.5,.65); nMesh.setColorAt(k,col); k++;
+  }
+  nMesh.instanceColor.needsUpdate=true; scene.add(nMesh);
+  
+  /* ---------- edges ----------------------- */
+  const ePos=new Float32Array(edges.length*6);
+  edges.forEach((e,i)=>ePos.set([...nodes[e[0]].position,...nodes[e[1]].position],i*6));
+  const eGeo=new THREE.BufferGeometry().setAttribute('position',new THREE.BufferAttribute(ePos,3));
+  const eMat=new THREE.LineBasicMaterial({color:0x7fb7ff,opacity:.25,transparent:true});
+  const eLines=new THREE.LineSegments(eGeo,eMat); scene.add(eLines);
+  
+  /* fit camera */
+  const ctr=box.getCenter(new THREE.Vector3()).multiplyScalar(SCALE);
+  const dia=box.getSize(new THREE.Vector3()).length()*SCALE;
+  controls.target.copy(ctr); camera.position.set(ctr.x,ctr.y,dia*1.5+ctr.z);
+  camera.far=dia*10; camera.updateProjectionMatrix();
+  
+  /* ---------- GUI ------------------------ */
+  const gui=new GUI({width:220});
+  const cfg={bloomStrength:.8, bloomRadius:.2, bloomThresh:.25,
+             edgeAlpha:.25, nodeAlpha:1, particleScale:1,
+             showNodes:true, showEdges:true, showParticles:true, fit:fitView};
+  gui.add(cfg,'bloomStrength',0,3,.01).onChange(v=>bloom.strength=v);
+  gui.add(cfg,'bloomRadius'  ,0,.5,.01).onChange(v=>bloom.radius=v);
+  gui.add(cfg,'bloomThresh'  ,0,.9,.01).onChange(v=>bloom.threshold=v);
+  
+  gui.add(cfg,'edgeAlpha',0,1,.01).onChange(v=>eMat.opacity=v);
+  gui.add(cfg,'nodeAlpha',0,1,.01).onChange(v=>nMat.opacity=v);
+  gui.add(cfg,'particleScale',0.2,3,.01);
+  
+  gui.add(cfg,'showNodes').onChange(v=>nMesh.visible=v);
+  gui.add(cfg,'showEdges').onChange(v=>eLines.visible=v);
+  const legend=gui.addFolder('particle colour'); legend.close();
+  
+  /* ---------- tooltip -------------------- */
+  const tip=document.getElementById('tip'), ray=new THREE.Raycaster(), mouse=new THREE.Vector2();
+  addEventListener('pointermove',e=>{
+    mouse.x=(e.clientX/innerWidth)*2-1; mouse.y=-(e.clientY/innerHeight)*2+1;
+    ray.setFromCamera(mouse,camera); const hit=ray.intersectObject(nMesh)[0];
+    if(hit){ const id=Object.keys(nodes)[hit.instanceId], l=nodes[id].layer;
+             tip.textContent=`Node ${id} │ layer ${l}`;
+             tip.style.left=e.clientX+'px'; tip.style.top=e.clientY+'px'; tip.classList.remove('hide');}
+    else tip.classList.add('hide');
+  });
+  
+  /* ---------- load log ------------------- */
+  const txt = await fetch(LOG).then(r=>r.ok?r.text():'').catch(()=>'');
+  
+  if (txt) {
+    const FRAMES = txt.trim().split('\n').map(JSON.parse);
+    document.getElementById('seek').max=FRAMES.length-1;
+  
+    /* particles ---------------------------------------------------------- */
+    const maxP = Math.max(...FRAMES.map(f=>f.particles.length));
+    const pGeo = new THREE.SphereGeometry(nRad*1.3,12,12);
+    const pMat = new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.95});
+    const pMesh= new THREE.InstancedMesh(pGeo,pMat,Math.max(maxP,1));
+    pMesh.count=maxP; scene.add(pMesh); gui.add(cfg,'showParticles').onChange(v=>pMesh.visible=v);
+    /* seed colour attribute */
+    pMesh.setColorAt(0,new THREE.Color(0xffffff)); pMesh.instanceColor.needsUpdate=true;
+  
+    /* world‑lines -------------------------------------------------------- */
+    const trackLen=40;
+    const linePos=new Float32Array(maxP*trackLen*6);
+    const lineCol=new Float32Array(maxP*trackLen*6);
+    const wGeo=new THREE.BufferGeometry()
+         .setAttribute('position',new THREE.BufferAttribute(linePos,3))
+         .setAttribute('color',   new THREE.BufferAttribute(lineCol,3));
+    const wMat=new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.6});
+    const wLines=new THREE.LineSegments(wGeo,wMat); scene.add(wLines);
+    const tracks=Array.from({length:maxP},()=>[]);
+  
+    const rAll=FRAMES.flatMap(f=>f.particles.map(p=>p.kinematics.radius));
+    const r95=d3.quantile(rAll.sort(d3.ascending),.95)||1;
+    const R_UNIT=nRad*4/r95;
+  
+    const cache=new Map();
+    function colFor(period){
+       if(!cache.has(period)){
+          const c=new THREE.Color().setHSL((hue0+period*.618)%1,.65,.55);
+          cache.set(period,c);
+          legend.addColor({[period]:'#'+c.getHexString()},period);
+       }
+       return cache.get(period);
     }
-    particles.setMatrixAt(i,m);
+  
+    /* timeline widgets */
+    let idx=0, playing=true, last=performance.now();
+    const playBtn=document.getElementById('play'), seek=document.getElementById('seek'), lbl=document.getElementById('tickLabel');
+    playBtn.onclick=()=>{playing=!playing; playBtn.textContent=playing?'❚❚':'▶︎'};
+    seek.oninput=()=>{idx=+seek.value; draw(idx)};
+  
+    function draw(k){
+      const f=FRAMES[k]; lbl.textContent=`tick ${f.tick}`;
+      const m4=new THREE.Matrix4(); let vCnt=0;
+  
+      for(let i=0;i<maxP;i++){
+        if(i<f.particles.length){
+          const P=f.particles[i]; const r=P.kinematics.radius*R_UNIT*cfg.particleScale;
+          const pos=P.kinematics.centroid.map(v=>v*SCALE);
+          m4.makeScale(r,r,r).setPosition(...pos);
+          pMesh.setMatrixAt(i,m4); pMesh.setColorAt(i,colFor(P.period));
+  
+          const tr=tracks[i]; tr.push(pos); if(tr.length>trackLen) tr.shift();
+          tr.forEach((p,j)=>{ if(j===0) return;
+            const off=(vCnt+j-1)*6; linePos.set([...tr[j-1],...p],off);
+            lineCol.set([...colFor(P.period).toArray(),...colFor(P.period).toArray()],off);
+          });
+          vCnt+=Math.max(tr.length-1,0);
+        }else{ m4.makeScale(0,0,0); pMesh.setMatrixAt(i,m4); tracks[i]=[]; }
+      }
+      pMesh.instanceMatrix.needsUpdate=true;
+      if(pMesh.instanceColor) pMesh.instanceColor.needsUpdate=true;
+      wGeo.attributes.position.needsUpdate=true;
+      wGeo.attributes.color.needsUpdate=true;
+      wGeo.setDrawRange(0,vCnt*2);
+      seek.value=k;
+    }
+  
+    function loop(t=0){
+      requestAnimationFrame(loop); controls.update();
+      if(playing && t-last>60){ idx=(idx+1)%FRAMES.length; draw(idx); last=t; }
+      composer.render();
+    }
+    draw(0); loop();
+  
+  } else { // static only
+    (function loop(){ requestAnimationFrame(loop); controls.update(); composer.render();})();
   }
-  particles.instanceMatrix.needsUpdate = true;
-}
-
-// -----------------------------------------------------------------------------
-//  Timeline
-// -----------------------------------------------------------------------------
-let play = true, frameIdx = 0, lastT = performance.now();
-const seek = document.getElementById('seek');
-seek.oninput = e => { frameIdx = +seek.value; drawFrame(frames[frameIdx]); };
-
-window.addEventListener('keydown', e=>{
-  if(e.code==='Space'){ play=!play; }
-});
-
-function animate(now){
-  requestAnimationFrame(animate);
-  controls.update();
-
-  if(play && now-lastT>60){
-    frameIdx = (frameIdx+1)%frames.length;
-    seek.value = frameIdx;
-    drawFrame(frames[frameIdx]);
-    lastT = now;
-  }
-  composer.render();
-}
-drawFrame(frames[0]);
-animate(performance.now());
-</script>
-</body>
-</html>
+  
+  /* helpers */
+  function fitView(){ controls.target.copy(ctr); camera.position.set(ctr.x,ctr.y,dia*1.5+ctr.z); camera.updateProjectionMatrix(); }
+  addEventListener('resize',()=>{
+    camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight); composer.setSize(innerWidth,innerHeight);
+  });
+  </script>
+  </body></html>
+  
