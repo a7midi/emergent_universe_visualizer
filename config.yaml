@@ -11,7 +11,7 @@ causal_site:
   layers: 60
   avg_nodes_per_layer: 35
   edge_probability: 0.08
-  max_lookback_layers: 2
+  max_lookback_layers: 0
 
 # State & Tag Parameters
 tags:
@@ -22,8 +22,8 @@ tags:
 # Particle Detection Parameters
 detector:
   grid_size: 30  # Divide the site into 10x10 cells for hashing
-  max_history_length: 60000 # Memory optimization for hash history
-  min_loop_period: 3
+  max_history_length: 160000 # Memory optimization for hash history
+  min_loop_period: 5
   min_particle_size: 2 # Minimum number of cells in a cluster
 
 # Visualization Parameters
