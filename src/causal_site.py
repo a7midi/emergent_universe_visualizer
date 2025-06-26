@@ -1,10 +1,5 @@
-"""
-causal_site.py
-
-VERSION 6: Corrected and verified against theoretical hypotheses.
-- FIX: Enforces max_out_degree_R on successors (out-degree), not predecessors.
-- FIX: Adds a safeguard to ensure all visible nodes have at least one parent.
-"""
+# src/causal_site.py
+# VERSION 7: Corrected for lookback=0 edge case.
 
 import networkx as nx
 import numpy as np
@@ -22,6 +17,7 @@ class CausalSite:
         self.graph = nx.DiGraph()
         self.nodes_by_layer = {}
         self.nodes_by_cell = {}
+        self.node_positions = {} # For 3D visualization export
 
     def generate_graph(self):
         """
@@ -44,37 +40,45 @@ class CausalSite:
 
         # --- Step 1: Generate nodes and initial edges ---
         for layer_index in range(self.num_layers):
-            num_nodes_in_layer = rng.poisson(avg_nodes)
+            num_nodes_in_layer = rng.poisson(avg_nodes) if avg_nodes > 0 else 1
             if num_nodes_in_layer == 0:
                 num_nodes_in_layer = 1
             
             self.nodes_by_layer[layer_index] = []
 
-            for _ in range(num_nodes_in_layer):
+            for i in range(num_nodes_in_layer):
                 node_id = node_counter
+                # Store 3D position for visualization export
+                pos_x = (i - num_nodes_in_layer / 2) * 20
+                pos_y = rng.uniform(-5, 5)
+                pos_z = -layer_index * 20
+                self.node_positions[node_id] = [pos_x, pos_y, pos_z]
+                
                 self.graph.add_node(node_id, layer=layer_index)
                 self.nodes_by_layer[layer_index].append(node_id)
                 node_counter += 1
 
                 if layer_index > 0:
-                    start_layer = max(0, layer_index - max_lookback)
+                    # The range of previous layers to connect to
+                    start_layer = max(0, layer_index - max_lookback) if max_lookback > 0 else layer_index -1
+                    if start_layer >= layer_index:
+                        continue
+
                     for lookback_idx in range(start_layer, layer_index):
                         previous_layer_nodes = self.nodes_by_layer.get(lookback_idx, [])
                         for potential_parent in previous_layer_nodes:
                             distance = layer_index - lookback_idx
-                            if rng.random() < edge_prob / distance:
+                            if rng.random() < edge_prob / (distance**0.5): # Use sqrt for less aggressive falloff
                                 self.graph.add_edge(potential_parent, node_id)
         
-        # --- Step 2 (FIXED): Enforce maximum SUCCESSOR count (out-degree R) ---
+        # --- Step 2: Enforce maximum SUCCESSOR count (out-degree R) ---
         max_r = self.config.get('tags', {}).get('max_out_degree_R', 2)
         print(f"Enforcing maximum successor count (R) of {max_r}...")
         
-        # Iterate through all nodes that could be parents (all but the last layer)
         for layer_index in range(self.num_layers - 1):
             for node_id in self.nodes_by_layer.get(layer_index, []):
                 successors = list(self.graph.successors(node_id))
                 if len(successors) > max_r:
-                    # If a node has too many children, randomly prune some connections
                     children_to_prune = rng.choice(
                         successors, 
                         size=len(successors) - max_r, 
@@ -83,7 +87,7 @@ class CausalSite:
                     for child_to_prune in children_to_prune:
                         self.graph.remove_edge(node_id, child_to_prune)
 
-    # --- Step 3 (NEW): Safeguard for non-terminal visible nodes ---
+        # --- Step 3: Safeguard for non-terminal visible nodes ---
         print("Safeguarding against isolated visible nodes...")
         sim_config = self.config.get('simulation', {})
         hide_layer_index = sim_config.get('hide_layer_index', -1)
@@ -93,11 +97,19 @@ class CausalSite:
                 continue
             
             for node_id in self.nodes_by_layer.get(layer_index, []):
-                # If a visible node has no parents after pruning...
                 if self.graph.in_degree(node_id) == 0:
-                    # ...find a random parent from a valid previous layer and connect it.
-                    start_layer = max(0, layer_index - max_lookback)
-                    potential_parent_layer_idx = rng.integers(start_layer, layer_index)
+                    
+                    # THE FIX: Handle the lookback=0 edge case
+                    start_layer = max(0, layer_index - max_lookback) if max_lookback > 0 else layer_index -1
+                    
+                    # Ensure the range for selecting a parent layer is valid
+                    if start_layer >= layer_index:
+                        # This can only happen if layer_index=1 and lookback=0.
+                        # In this case, the only valid parent layer is 0.
+                        potential_parent_layer_idx = 0
+                    else:
+                        potential_parent_layer_idx = rng.integers(start_layer, layer_index)
+
                     potential_parents = self.nodes_by_layer.get(potential_parent_layer_idx, [])
                     if potential_parents:
                         parent_to_add = rng.choice(potential_parents)
@@ -110,22 +122,31 @@ class CausalSite:
         print("Assigning nodes to grid cells for particle detection...")
         grid_size = self.config.get('detector', {}).get('grid_size', 12)
 
-        for layer_idx, nodes in self.nodes_by_layer.items():
-            if not nodes: continue
-            for i, node_id in enumerate(nodes):
-                cell_x = int((i / len(nodes)) * grid_size)
-                cell_y = int((layer_idx / self.num_layers) * grid_size)
-                cell_id = (min(cell_x, grid_size - 1), min(cell_y, grid_size - 1))
-                self.graph.nodes[node_id]['cell_id'] = cell_id
+        # Find the bounding box of the node positions to normalize grid assignment
+        if not self.node_positions: return
+        
+        all_pos = np.array(list(self.node_positions.values()))
+        min_coords = np.min(all_pos, axis=0)
+        max_coords = np.max(all_pos, axis=0)
+        span = max_coords - min_coords
+        span[span==0] = 1 # Avoid division by zero if all nodes are in a line
 
-                if cell_id not in self.nodes_by_cell:
-                    self.nodes_by_cell[cell_id] = []
-                self.nodes_by_cell[cell_id].append(node_id)
+        for node_id, pos in self.node_positions.items():
+            norm_pos = (pos - min_coords) / span
+            cell_x = int(norm_pos[0] * grid_size)
+            cell_y = int(norm_pos[2] * grid_size) # Use Z for vertical grid position
+            cell_id = (min(cell_x, grid_size - 1), min(cell_y, grid_size - 1))
+            self.graph.nodes[node_id]['cell_id'] = cell_id
+
+            if cell_id not in self.nodes_by_cell:
+                self.nodes_by_cell[cell_id] = []
+            self.nodes_by_cell[cell_id].append(node_id)
+            
         print("Grid cell assignment complete.")
 
     def get_predecessors(self, node_id):
         """Returns the immediate causal predecessors of a given site."""
-        return self.graph.predecessors(node_id)
+        return list(self.graph.predecessors(node_id))
     
     def get_nodes_in_cell(self, cell_id):
         """Retrieves all node IDs located within a specific grid cell."""
